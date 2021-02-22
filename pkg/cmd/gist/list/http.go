@@ -12,7 +12,7 @@ import (
 	"github.com/shurcooL/graphql"
 )
 
-func listGists(client *http.Client, hostname string, limit int, visibility string) ([]shared.Gist, error) {
+func ListGists(client *http.Client, hostname string, limit int, visibility string) ([]shared.Gist, error) {
 	type response struct {
 		Viewer struct {
 			Gists struct {

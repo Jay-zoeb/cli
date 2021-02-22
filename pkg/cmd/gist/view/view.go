@@ -5,12 +5,16 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"time"
 
+	"github.com/AlecAivazis/survey/v2"
 	"github.com/cli/cli/internal/ghinstance"
+	"github.com/cli/cli/pkg/cmd/gist/list"
 	"github.com/cli/cli/pkg/cmd/gist/shared"
 	"github.com/cli/cli/pkg/cmdutil"
 	"github.com/cli/cli/pkg/iostreams"
 	"github.com/cli/cli/pkg/markdown"
+	"github.com/cli/cli/pkg/text"
 	"github.com/cli/cli/utils"
 	"github.com/spf13/cobra"
 )
@@ -33,11 +37,16 @@ func NewCmdView(f *cmdutil.Factory, runF func(*ViewOptions) error) *cobra.Comman
 	}
 
 	cmd := &cobra.Command{
-		Use:   "view {<id> | <url>}",
+		Use:   "view [<id> | <url>]",
 		Short: "View a gist",
-		Args:  cmdutil.MinimumArgs(1, "cannot view: gist argument required"),
+		Long: `View specific gist if argument provided.
+
+With no argument, most recent 10 gists will prompt`,
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			opts.Selector = args[0]
+			if len(args) == 1 {
+				opts.Selector = args[0]
+			}
 
 			if !opts.IO.IsStdoutTTY() {
 				opts.Raw = true
@@ -60,6 +69,17 @@ func NewCmdView(f *cmdutil.Factory, runF func(*ViewOptions) error) *cobra.Comman
 
 func viewRun(opts *ViewOptions) error {
 	gistID := opts.Selector
+	client, err := opts.HttpClient()
+	if err != nil {
+		return err
+	}
+
+	if gistID == "" {
+		gistID, err = promptGists(client)
+		if err != nil {
+			return err
+		}
+	}
 
 	if opts.Web {
 		gistURL := gistID
@@ -79,11 +99,6 @@ func viewRun(opts *ViewOptions) error {
 			return err
 		}
 		gistID = id
-	}
-
-	client, err := opts.HttpClient()
-	if err != nil {
-		return err
 	}
 
 	gist, err := shared.GetGist(client, ghinstance.OverridableDefault(), gistID)
@@ -159,4 +174,41 @@ func viewRun(opts *ViewOptions) error {
 	}
 
 	return nil
+}
+
+func promptGists(client *http.Client) (gistID string, err error) {
+	gists, err := list.ListGists(client, ghinstance.OverridableDefault(), 10, "all")
+	if err != nil {
+		return "", err
+	}
+
+	var opts []string
+	var index int
+	var gistIDs = make([]string, len(gists))
+
+	for i, gist := range gists {
+		gistIDs[i] = gist.ID
+		description := gist.Description
+		if description == "" {
+			for filename := range gist.Files {
+				if !strings.HasPrefix(filename, "gistfile") {
+					description = filename
+					break
+				}
+			}
+		}
+		gistTime := utils.FuzzyAgo(time.Since(gist.UpdatedAt))
+		opts = append(opts, fmt.Sprintf("%s (%s)", text.ReplaceExcessiveWhitespace(description), gistTime))
+	}
+
+	prompt := &survey.Select{
+		Message: "Select a gist",
+		Options: opts,
+	}
+	err = survey.AskOne(prompt, &index)
+	if err != nil {
+		return "", err
+	}
+
+	return gistIDs[index], nil
 }

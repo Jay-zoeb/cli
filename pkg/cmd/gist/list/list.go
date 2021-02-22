@@ -67,7 +67,7 @@ func listRun(opts *ListOptions) error {
 		return err
 	}
 
-	gists, err := listGists(client, ghinstance.OverridableDefault(), opts.Limit, opts.Visibility)
+	gists, err := ListGists(client, ghinstance.OverridableDefault(), opts.Limit, opts.Visibility)
 	if err != nil {
 		return err
 	}
